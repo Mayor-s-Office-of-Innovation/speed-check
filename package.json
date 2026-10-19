@@ -1,0 +1,49 @@
+{
+  "name": "speed-check",
+  "version": "0.1.0",
+  "description": "Lab performance budgets for CI: Lighthouse on the pages you name, median of repeated runs, warn-then-gate thresholds, and nothing uploaded anywhere.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Mayor-s-Office-of-Innovation/speed-check.git"
+  },
+  "homepage": "https://github.com/Mayor-s-Office-of-Innovation/speed-check#readme",
+  "bugs": {
+    "url": "https://github.com/Mayor-s-Office-of-Innovation/speed-check/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.19"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "main": "./src/index.js",
+  "bin": {
+    "speed-check": "./src/cli/index.js"
+  },
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "test": "node --test",
+    "smoke": "node src/cli/index.js --config examples/static-site/speed-check.config.js --runs 1"
+  },
+  "keywords": [
+    "lighthouse",
+    "performance",
+    "performance-budget",
+    "core-web-vitals",
+    "ci",
+    "government"
+  ],
+  "dependencies": {
+    "lighthouse": "^13.5.0"
+  }
+}

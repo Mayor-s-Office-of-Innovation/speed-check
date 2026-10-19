@@ -1,0 +1,132 @@
+name: speed-check
+description: >-
+  Lab performance budgets with Lighthouse on the pages you name: median of
+  repeated runs, warn-then-gate thresholds. Writes the table to the job
+  summary and keeps the reports as a workflow artifact. Nothing is uploaded
+  anywhere else.
+author: speed-check contributors
+branding:
+  icon: activity
+  color: green
+
+inputs:
+  config:
+    description: Path to the config file, relative to working-directory.
+    default: speed-check.config.js
+  base-url:
+    description: Override the config's baseURL (for example, a preview deployment URL).
+    default: ""
+  mode:
+    description: Override the config's mode (warn | gate).
+    default: ""
+  runs:
+    description: Override the config's number of runs per page.
+    default: ""
+  working-directory:
+    description: Directory containing package.json and the config.
+    default: "."
+  version:
+    description: speed-check version to install when the repo does not already depend on it.
+    default: latest
+  comment:
+    description: Post or update a pull-request comment with the Markdown report ("true" | "false"). Needs pull-requests write permission.
+    default: "false"
+  artifact-name:
+    description: Name of the uploaded report artifact.
+    default: speed-check-report
+  retention-days:
+    description: How long to keep the report artifact.
+    default: "14"
+  node-version:
+    description: Node.js version.
+    default: "22"
+
+outputs:
+  exit-code:
+    description: 0 measured and within budget (or warn mode), 1 over budget in gate mode, 2 config error, 3 Lighthouse or server failure.
+    value: ${{ steps.run.outputs.code }}
+  report-dir:
+    description: Directory holding speed-check.json, speed-check.md, and lhr/*.json.
+    value: ${{ steps.run.outputs.out }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v7
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Install speed-check
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        if [ ! -d node_modules/speed-check ]; then
+          npm install --no-save "speed-check@${VERSION}"
+        fi
+
+    - name: Run speed-check
+      id: run
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        CONFIG: ${{ inputs.config }}
+        BASE_URL: ${{ inputs.base-url }}
+        MODE: ${{ inputs.mode }}
+        RUNS: ${{ inputs.runs }}
+      run: |
+        set +e
+        out="$RUNNER_TEMP/speed-check-report"
+        args=(--config "$CONFIG" --out "$out")
+        [ -n "$BASE_URL" ] && args+=(--base-url "$BASE_URL")
+        [ -n "$MODE" ] && args+=(--mode "$MODE")
+        [ -n "$RUNS" ] && args+=(--runs "$RUNS")
+        npx speed-check "${args[@]}"
+        code=$?
+        echo "code=$code" >> "$GITHUB_OUTPUT"
+        echo "out=$out" >> "$GITHUB_OUTPUT"
+        exit 0
+
+    - uses: actions/upload-artifact@v7
+      if: always()
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ steps.run.outputs.out }}
+        if-no-files-found: ignore
+        retention-days: ${{ inputs.retention-days }}
+
+    - name: Comment on the pull request
+      # Off by default: the job summary already carries the table and this
+      # step needs pull-requests: write. Fork PRs get a read-only token, so a
+      # failed comment must not mask the real result.
+      if: inputs.comment == 'true' && github.event_name == 'pull_request'
+      continue-on-error: true
+      uses: actions/github-script@v7
+      env:
+        REPORT: ${{ steps.run.outputs.out }}/speed-check.md
+      with:
+        script: |
+          const fs = require("fs");
+          if (!fs.existsSync(process.env.REPORT)) return;
+          const body = fs.readFileSync(process.env.REPORT, "utf8");
+          const marker = "<!-- speed-check-report -->";
+          const { owner, repo } = context.repo;
+          const issue_number = context.payload.pull_request.number;
+          const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number, per_page: 100 });
+          const mine = comments.find((c) => c.user?.type === "Bot" && c.body?.startsWith(marker));
+          if (mine) {
+            await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
+          } else {
+            await github.rest.issues.createComment({ owner, repo, issue_number, body });
+          }
+
+    - name: Fail the job when speed-check did
+      shell: bash
+      env:
+        CODE: ${{ steps.run.outputs.code }}
+      run: |
+        if [ "$CODE" != "0" ]; then
+          echo "speed-check exited with $CODE. See the job summary or the uploaded report."
+          exit "$CODE"
+        fi

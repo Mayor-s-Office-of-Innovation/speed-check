@@ -1,0 +1,8 @@
+node_modules/
+speed-check-report/
+examples/*/speed-check-report/
+*.log
+*.tgz
+.DS_Store
+CLAUDE.md
+CLAUDE.local.md
